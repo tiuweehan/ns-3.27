@@ -155,6 +155,7 @@ def build(bld):
         'model/tcp-scalable.cc', 
         'model/tcp-veno.cc',
         'model/tcp-bic.cc',
+        'model/tcp-cubic.cc',
         'model/tcp-yeah.cc',
         'model/tcp-ledbat.cc',
         'model/tcp-illinois.cc',
@@ -285,6 +286,7 @@ def build(bld):
         'test/tcp-endpoint-bug2211.cc',
         'test/tcp-datasentcb-test.cc',
         'test/ipv4-rip-test.cc',
+        'test/tcp-cubic-test-suite.cc',
         
         ]
     privateheaders = bld(features='ns3privateheader')
@@ -383,6 +385,7 @@ def build(bld):
         'model/tcp-scalable.h',
         'model/tcp-veno.h',
         'model/tcp-bic.h',
+        'model/tcp-cubic.h',
         'model/tcp-yeah.h',
         'model/tcp-illinois.h',
         'model/tcp-htcp.h',
