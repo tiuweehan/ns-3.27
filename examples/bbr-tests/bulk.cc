@@ -30,7 +30,7 @@ using namespace ns3;
 #define ENABLE_PCAP      false     // Set to "true" to enable pcap
 #define ENABLE_TRACE     false     // Set to "true" to enable trace
 #define BIG_QUEUE        2000      // Packets
-#define QUEUE_SIZE       120        // Packets
+#define QUEUE_SIZE       1         // Packets
 #define START_TIME       0.0       // Seconds
 #define STOP_TIME        120.0       // Seconds
 #define S_TO_R_BW        "1000Mbps" // Server to router
@@ -67,9 +67,16 @@ int main (int argc, char *argv[]) {
   std::vector<int> rtts { 20, 50, 80 };
 
   int packetSize = 1000;
-  double bdp = 1;
+  double bdp = 2;
   int bandwidth = 20;
   int maxRtt = *std::max_element(rtts.begin(), rtts.end());
+
+  CommandLine cmd;
+  cmd.AddValue("flows", "Flow combinations of BBR and Cubic", flows);
+  cmd.AddValue("bdp", "BDP", bdp);
+  cmd.AddValue("bandwidth", "Bandwidth", bandwidth);
+  cmd.Parse(argc, argv);
+
   int queueSizeBytes = bdp * bandwidth * maxRtt * 1000 / 8;
   int queueSizePackets = queueSizeBytes / packetSize;
   
@@ -79,15 +86,9 @@ int main (int argc, char *argv[]) {
     flow_infos[i] = flow_info { flows[i] == 'B' ? BBR : CUBIC, rtts[i / (nSender / rtts.size())] };
   }
 
-  CommandLine cmd;
-  cmd.AddValue("flows", "Flow combinations of BBR and Cubic", flows);
-  cmd.AddValue("bdp", "BDP", bdp);
-  cmd.AddValue("bandwidth", "Bandwidth", bandwidth);
-  cmd.Parse(argc, argv);
-
   /////////////////////////////////////////
   // Setup environment
-  Config::SetDefault ("ns3::PfifoFastQueueDisc::Limit", UintegerValue (queueSizePackets / 2));
+  Config::SetDefault ("ns3::PfifoFastQueueDisc::Limit", UintegerValue (queueSizePackets));
 
   // Report parameters.
   NS_LOG_INFO("Flow: " << flows);
@@ -135,7 +136,7 @@ int main (int argc, char *argv[]) {
   // NS_LOG_INFO("Router queue size: "<< QUEUE_SIZE);
   p2p.SetQueue("ns3::DropTailQueue",
                "Mode", StringValue ("QUEUE_MODE_PACKETS"),
-               "MaxPackets", UintegerValue(queueSizePackets / 2));
+               "MaxPackets", UintegerValue(1));
   NetDeviceContainer routerDevices = p2p.Install(r0_to_r1);
 
   NetDeviceContainer senderDevices, router0Devices, router1Devices, receiverDevices;
@@ -259,6 +260,10 @@ int main (int argc, char *argv[]) {
 
   /////////////////////////////////////////
   // Ouput stats.
+
+  std::ofstream outputFile;
+  outputFile.open(flows + "_" + std::to_string(bdp));
+
   double tput;
 
   for (int i = 0; i < nSender; i++) {
@@ -268,7 +273,9 @@ int main (int argc, char *argv[]) {
     tput *= 8;          // Convert to bits.
     tput /= 1000000.0;  // Convert to Mb/s
     NS_LOG_INFO("Throughput: " << tput << " Mb/s");
+    outputFile << tput << " ";
   }
+  outputFile.close();
 
   // Done.
   Simulator::Destroy();
