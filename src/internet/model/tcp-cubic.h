@@ -1,8 +1,7 @@
-#ifndef TCP_CUBIC_H
-#define TCP_CUBIC_H
-
-
-/**
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+/*
+ * Copyright (c) 2014 Natale Patriciello <natale.patriciello@gmail.com>
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation;
@@ -16,246 +15,155 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
- * Author: Brett Levasseur
- */
-/**
- * This header file contains defines, global variables and function definitions
- * to use with TCP CUBIC. The format of this file was designed from other ns-3
- * TCP implementation header files.
  */
 
-
-/**
- * The following defines come from the ns-2 implementation and Linux Kernel
- * version 3.11 implementation for TCP CUBIC. The Linux implemenation was taken
- * from the Web Site:
- * http://lxr.free-electrons.com/source/net/ipv4/tcp_cubic.c?v=3.11
- */
-
-/** Constant scaling factor used to set the CUBIC parameter beta. */
-#define BICTCP_BETA_SCALE 1024
-
-/** Constant used to convert units of time. */
-#define BICTCP_HZ 10
-
-/** Constant used to convert units of time. */
-#define HZ 1000
-
-/** Constant used to bit shift ACK counts. */
-#define ACK_RATIO_SHIFT 4
-
-#include <ns3/tcp-socket-base.h>
-#include <ns3/packet.h>
+#ifndef TCPCUBIC_H
+#define TCPCUBIC_H
 
 #include "ns3/tcp-congestion-ops.h"
+#include "ns3/tcp-socket-base.h"
+
 
 namespace ns3 {
 
 /**
- * \ingroup socket
- * \ingroup tcp
+ * \brief The Cubic Congestion Control Algorithm
  *
- * This class implements TCP Cubic, which as of the time of this writing is one
- * of the two major versions of TCP used (Cubic in Linux systems, Compound in
- * Windows).
+ * TCP Cubic is a protocol that enhances the fairness property
+ * of Bic while retaining its scalability and stability. The main feature is
+ * that the window growth function is defined in real time in order to be independent
+ * from the RTT. More specifically, the congestion window of Cubic is determined
+ * by a function of the elapsed time from the last window reduction.
+ *
+ * The Cubic code is quite similar to that of Bic.
+ * The main difference is located in the method Update, an edit
+ * necessary for satisfying the Cubic window growth, that can be tuned with
+ * the attribute C (the Cubic scaling factor).
+ *
+ * Following the Linux implementation, we included the Hybrid Slow Start,
+ * that effectively prevents the overshooting of slow start
+ * while maintaining a full utilization of the network. This new type of slow
+ * start can be disabled through the \Attribute{HyStart} attribute.
+ *
+ * CUBIC TCP is implemented and used by default in Linux kernels 2.6.19
+ * and above; this version follows the implementation in Linux 3.14, which
+ * slightly differ from the CUBIC paper. It also features HyStart.
+ *
+ * Home page:
+ *      http://netsrv.csc.ncsu.edu/twiki/bin/view/Main/BIC
+ * The work starts from the implementation of CUBIC TCP in
+ * Sangtae Ha, Injong Rhee and Lisong Xu,
+ * "CUBIC: A New TCP-Friendly High-Speed TCP Variant"
+ * in ACM SIGOPS Operating System Review, July 2008.
+ * Available from:
+ *  http://netsrv.csc.ncsu.edu/export/cubic_a_new_tcp_2008.pdf
+ *
+ * CUBIC integrates a new slow start algorithm, called HyStart.
+ * The details of HyStart are presented in
+ *  Sangtae Ha and Injong Rhee,
+ *  "Taming the Elephants: New TCP Slow Start", NCSU TechReport 2008.
+ * Available from:
+ *  http://netsrv.csc.ncsu.edu/export/hystart_techreport_2008.pdf
+ *
+ * More information on this implementation: http://dl.acm.org/citation.cfm?id=2756518
  */
-class TcpCubic : public TcpNewReno
+class TcpCubic : public TcpCongestionOps
 {
 public:
+  /**
+   * \brief Get the type ID.
+   * \return the object TypeId
+   */
   static TypeId GetTypeId (void);
 
-  /**
-   * Default constructor.
-   */
-  TcpCubic (void);
-
-  /**
-   * Copy constructor.
-   */
+  TcpCubic ();
   TcpCubic (const TcpCubic& sock);
 
-  /**
-   * Default deconstructor.
-   */
-  virtual ~TcpCubic (void);
+  virtual std::string GetName () const;
+  virtual void PktsAcked (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked, const Time& rtt);
+  virtual void IncreaseWindow (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked);
+  virtual uint32_t GetSsThresh (Ptr<const TcpSocketState> tcb, uint32_t bytesInFlight);
+  virtual void CongestionStateSet (Ptr<TcpSocketState> tcb,
+                                   const TcpSocketState::TcpCongState_t newState);
 
-  virtual uint32_t GetSsThresh (Ptr<const TcpSocketState> tcb,
-                                uint32_t bytesInFlight);
-
-  virtual void PktsAcked (Ptr<TcpSocketState> tcb, uint32_t packetsAcked,
-                          const Time& rtt);
-
-
-protected:
-  virtual void CongestionAvoidance (Ptr<TcpSocketState> tcb, uint32_t segmentsAcked);
+  virtual Ptr<TcpCongestionOps> Fork ();
 
 private:
+  /**
+   * \brief Values to detect the Slow Start mode of HyStart
+   */
+  enum HybridSSDetectionMode
+  {
+    PACKET_TRAIN = 0x1, //!< Detection by trains of packet
+    DELAY        = 0x2  //!< Detection by delay value
+  };
+
+  bool     m_fastConvergence;  //!< Enable or disable fast convergence algorithm
+  double   m_beta;             //!< Beta for cubic multiplicative increase
+
+  bool     m_hystart;          //!< Enable or disable HyStart algorithm
+  int      m_hystartDetect;    //!< Detect way for HyStart algorithm \see HybridSSDetectionMode
+  uint32_t m_hystartLowWindow; //!< Lower bound cWnd for hybrid slow start (segments)
+  Time     m_hystartAckDelta;  //!< Spacing between ack's indicating train
+  Time     m_hystartDelayMin;  //!< Minimum time for hystart algorithm
+  Time     m_hystartDelayMax;  //!< Maximum time for hystart algorithm
+  uint8_t  m_hystartMinSamples; //!< Number of delay samples for detecting the increase of delay
+
+  uint32_t m_initialCwnd;      //!< Initial cWnd
+  uint8_t  m_cntClamp;         //!< Modulo of the (avoided) float division for cWnd
+
+  double   m_c;                //!< Cubic Scaling factor
+
+  // Cubic parameters
+  uint32_t     m_cWndCnt;         //!<  cWnd integer-to-float counter
+  uint32_t     m_lastMaxCwnd;     //!<  Last maximum cWnd
+  uint32_t     m_bicOriginPoint;  //!<  Origin point of bic function
+  double       m_bicK;            //!<  Time to origin point from the beginning
+                                  //    of the current epoch (in s)
+  Time         m_delayMin;        //!<  Min delay
+  Time         m_epochStart;      //!<  Beginning of an epoch
+  bool         m_found;           //!<  The exit point is found?
+  Time         m_roundStart;      //!<  Beginning of each round
+  SequenceNumber32   m_endSeq;    //!<  End sequence of the round
+  Time         m_lastAck;         //!<  Last time when the ACK spacing is close
+  Time         m_cubicDelta;      //!<  Time to wait after recovery before update
+  Time         m_currRtt;         //!<  Current Rtt
+  uint32_t     m_sampleCnt;       //!<  Count of samples for HyStart
+
+private:
+  /**
+   * \brief Reset HyStart parameters
+   */
+  void HystartReset (Ptr<const TcpSocketState> tcb);
+
+  void CubicReset (Ptr<const TcpSocketState> tcb);
 
   /**
-   * Return the index of the last set bit. In the original Linux implementation
-   * this method is provided in the Linux Kernel. This method is copied from the
-   * the ns-2 TCP package.
-   * @param a The number to get the last set bit of.
-   * @return The index of the last set bit.
+   * \brief Cubic window update after a new ack received
    */
-  uint32_t fls64 (uint64_t a);
+  uint32_t Update (Ptr<TcpSocketState> tcb);
 
   /**
-   * Return the index of the last set bit. The ns-2 implementation of the method
-   * fls64 uses this method with normal integers. This method is copied from the
-   * ns-2 TCP package.
-   * @param x The number to get the last set bit of.
-   * @return The index of the last set bit.
+   * \brief Update HyStart parameters
+   *
+   * \param tcb Transmission Control Block of the connection
+   * \param delay Delay for HyStart algorithm
    */
-  int fls (int x);
+  void HystartUpdate (Ptr<TcpSocketState> tcb, const Time &delay);
 
   /**
-   * The CUBIC algorithm in Linux and ns-2 does not use the normal C++ pow
-   * function to take the cubed root. Instead they use their own method. While
-   * this method does not produce a perfect cubed root it is what CUBIC uses.
-   * @param a The number to get the CUBIC root of.
-   * @return The cubic root of the parameter a.
+   * \brief Clamp time value in a range
+   *
+   * The returned value is t, clamped in a range specified
+   * by attributes (HystartDelayMin < t < HystartDelayMax)
+   *
+   * \param t Time value to clamp
+   * \return t itself if it is in range, otherwise the min or max
+   * value
    */
-  uint32_t CubicRoot (uint64_t a);
-  
-  /**
-   * Get the next size of the congestion window using the CUBIC update algorithm.
-   * Depending on the current situation this could be a TCP Friendly update or a
-   * standard CUBIC update for a concave or convex region.
-   * @param tcb The current socket state.
-   */
-  void CubicUpdate (Ptr<TcpSocketState> tcb);
-
-  /**
-   * Modify the number of ACKs CUBIC needs before updating the congestion
-   * control window when CUBIC is in the TCP TCP Friendly region.
-   * @param tcb The current socket state.
-   * @param cnt The suggested number of ACKs CUBIC requires before updating the
-   *            congestion control window.
-   * @return The number of ACKs CUBIC requires before updating the congestion
-   *         control window.
-   */
-  uint32_t CubicTcpFriendliness (Ptr<TcpSocketState> tcb, uint32_t cnt);
-
-  /**
-   * Setup CUBIC variables. Reset is called at initialization and for timeouts.
-   */
-  void CubicReset ();
-
-  /*
-   * Measure the lowest delay for receiving ACKs.
-   * @param tcb The current socket state.
-   */
-  void measure_delay (Ptr<TcpSocketState> tcb);
-
-  /*
-   * Return the TCP timestamp (based on simulation time in ms).
-   * @return The simulation time in milliseconds.
-   */
-  uint32_t tcp_time_stamp ();
-
-
-protected:
-  SequenceNumber32 m_recover; //< Previous highest Tx seqnum for fast recovery
-  uint32_t m_retxThresh;      //< Fast Retransmit threshold
-  bool m_inFastRec;           //< currently in fast recovery
-  bool m_limitedTx;           //< perform limited transmit
-
-
-  /** Cubic scaling factor. */
-  uint64_t m_cubeFactor;
-
-  /** Constant multiplication decrease factor in Cubic algorithm. */ 
-  double m_beta;
-
-  /**
-   * While not part of the original CUBIC algorithm this is used in the real
-   * Linux implementation instead of the normal C CUBIC scaling factor.
-   */
-  uint32_t m_cubeRttScale;
-
-  /**
-   * BIC Scale. This is not part of the CUBIC paper but it is in the Linux and
-   * ns-2 implementation.
-   */
-  int m_bicScale;
-
-  /**
-   * This is not part of the CUBIC paper but it is in the Linux and ns-2
-   * implementation.
-   */
-  uint32_t m_betaScale;
-
-  /**
-   * Limit on increment allowed during binary search. Used by the Linux and
-   * ns-2 implementation of CUBIC.
-   */
-  int m_maxIncrement;
-
-  /** Estimate the ratio of Packets/ACKs << 4 */
-  TracedValue<uint32_t> m_delayedAck;
-
-  /**
-   * The time the last congestion window reduction occured. This is used to
-   * find the elapsed time 't' used in the Cubic algorithm.
-   */
-  TracedValue<int64_t> m_epochStart;
-
-  /** Time when the CUBIC w_max (m_lastMax here) was updated last. */
-  uint32_t m_lastTime;
-
-  /** The congestion window size just before the last reduction. */
-  TracedValue<uint32_t> m_lastMax;
-
-  /** Track the cwnd at the previous call to CUBIC. */
-  uint32_t m_lastCwnd;
-
-  /** 
-   * Interval between two consecutive loss events in the steady-state.
-   */
-  double m_k;
-
-  /** The shortest RTT observed. */ 
-  uint32_t m_dMin;
-
-  /** The starting size of the congestion window at the last window reduction. */
-  TracedValue<uint32_t> m_originPoint;
-
-  /** The new cwnd suggested for TCP freiendliness. */
-  uint32_t m_tcpCwnd;
-
-  /** Flag for TCP Friendly region. */
-  bool m_tcpFriendly;
-
-  /** 
-   * Count of ACKs. Due to the ns-3 implementation of using bytes instead of
-   * packets this has been implemented as the number of bytes ACKed.
-   */
-  uint32_t m_ackCnt;
-
-  /** Track the number of segments acked since the last cwnd increment.. */
-  TracedValue<uint32_t> m_cWndCnt;
-
-  /**
-   * Track when the CUBIC algorithm switches from below to above origin.
-   * This is tracked for convienence during testing.
-   */
-  TracedValue<bool> m_belowOrigin;
-
-  /** Store the last TCP timestamp to calculate the shortest RTT. */
-  uint32_t m_previousTimeStamp;
-
-  /** The number of ACKs needed to update cwnd. */
-  TracedValue<uint32_t> m_acksNeeded;
-
-  /**
-   * Flag to indicate if Wmax is is lower than its previous value. This is used
-   * to see if the congestion control window needs to be lowered by an
-   * additional factor.
-   */
-  bool m_fastConvergence;
+  Time HystartDelayThresh (const Time &t) const;
 };
 
 } // namespace ns3
 
-#endif /* TCP_CUBIC_H */
+#endif // TCPCUBIC_H
